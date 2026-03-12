@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 load_dotenv(find_dotenv())
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI", "sqlite:///chat-db.sqlite")
 app.secret_key = os.getenv("SECRET_KEY")
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
@@ -277,4 +277,4 @@ def logout():
     return redirect("/login")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
