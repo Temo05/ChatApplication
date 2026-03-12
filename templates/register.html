@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="login-wrapper">
+
+  <div class="login-panel">
+    <div class="panel-content">
+      <div class="panel-logo">💬</div>
+      <h2 class="panel-title">Join thousands of people already chatting.</h2>
+      <p class="panel-sub">Create your free account and start connecting in seconds.</p>
+      <div class="panel-bubbles">
+        <div class="bubble bubble-1">Just signed up! This is awesome 🔥</div>
+        <div class="bubble bubble-2">Welcome to Chattr! 🎉</div>
+        <div class="bubble bubble-3">Let's get the conversation started 💬</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-form-side">
+    <div class="login-card">
+
+      <div class="login-header">
+        <h1 class="login-title">Create account</h1>
+        <p class="login-sub">Fill in your details to get started.</p>
+      </div>
+
+      <form action="{{url_for('register')}}" method="post">
+        {{ form.hidden_tag() }}
+
+        <div class="login-field">
+          {{ form.username.label }}
+          <div class="input-icon-wrap">
+            <i class="bi bi-person"></i>
+            {{ form.username(id="username", placeholder="john_doe") }}
+          </div>
+        </div>
+
+        <div class="login-field">
+          {{ form.email.label }}
+          <div class="input-icon-wrap">
+            <i class="bi bi-envelope"></i>
+            {{ form.email(id="email", placeholder="you@example.com") }}
+          </div>
+        </div>
+
+        <div class="login-field">
+          {{ form.password.label }}
+          <div class="input-icon-wrap">
+            <i class="bi bi-lock"></i>
+            {{ form.password(id="password", placeholder="min. 8 characters") }}
+          </div>
+        </div>
+
+        <!-- Confirm Password -->
+        <div class="login-field">
+          {{ form.password2.label }}
+          <div class="input-icon-wrap">
+            <i class="bi bi-lock-fill"></i>
+            {{ form.password2(id="password2", placeholder="repeat your password") }}
+          </div>
+        </div>
+
+        {% if error %}
+          <div class="login-error">
+            <i class="bi bi-exclamation-circle-fill"></i> {{ error }}
+          </div>
+        {% endif %}
+
+        <button type="submit" class="login-btn">Create Account</button>
+
+      </form>
+
+      <div class="login-footer">
+        Already have an account? <a href="{{url_for('login')}}">Sign in →</a>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

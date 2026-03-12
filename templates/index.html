@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="chat-app">
+
+  <!-- ── LEFT SIDEBAR ── -->
+  <div class="chat-sidebar">
+
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+      <div class="sidebar-user">
+        <div class="avatar avatar-sm">{% for letter in current_user.username.split(" ") %} {{letter[0].upper()}} {% endfor %}</div>
+        <span class="sidebar-username">{{ current_user.username }}</span>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn-icon-round" title="Log Out">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
+    </div>
+
+    <!-- Search -->
+    <div class="sidebar-search">
+      <form action="/" method="post">
+          {{ searchform.hidden_tag() }}
+        <div class="search-wrap">
+          <i class="bi bi-search"></i>
+          {{ searchform.name(class="searchInput", placeholder="Search by username...") }}
+          {{ searchform.submit(class="btn-search-submit") }}
+        </div>
+      </form>
+    </div>
+
+    <!-- Search Results (shown when searching) -->
+    {% if search_results %}
+    <div class="search-results">
+      <div class="section-label">People</div>
+      {% for user in search_results %}
+      <a href="{{url_for('new_chat', sendto_id=user.id)}}" class="search-result-item">
+        <div class="avatar avatar-sm">{{ user.username[0].upper() }}</div>
+        <div>
+          <div class="result-name">{{ user.username }}</div>
+          <div class="result-email">{{ user.email }}</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Chat List -->
+    <div class="chat-list">
+      <div class="section-label">Chats</div>
+
+      {% if all_chats %}
+        {% for chat in all_chats %}
+          {% if chat.user1.id == current_user.id %}
+            {% set other = chat.user2 %}
+          {% else %}
+            {% set other = chat.user1 %}
+          {% endif %}
+
+          <a href="{{ url_for('index', active_chat=chat.id) }}"
+             class="chat-item {% if active_chat and active_chat.id == chat.id %}active{% endif %}">
+            <div class="avatar avatar-md">{{ other.username[0].upper() }}</div>
+            <div class="chat-item-info">
+              <div class="chat-item-top">
+                <span class="chat-item-name">{{ other.username }}</span>
+                {% set msgs = chat.messages | selectattr("senderId",  "ne", current_user.id) | selectattr("isRead", "equalto", False) | list %}
+                {% set msgs_count = msgs | count %}
+                <span class="unread-dot {% if msgs %}show{%endif%}">{% if msgs_count < 10 %}{{msgs_count}}{% else %}9+{%endif%}</span>
+                {% if chat.messages %}
+                  <span class="chat-item-time">
+                    {{ chat.messages[-1].timestamp.strftime('%H:%M') }}
+                  </span>
+                {% endif %}
+              </div>
+              <div class="chat-item-preview">
+                {% if chat.messages %}
+                {% if not msgs %}
+                  {{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}
+                {% else %}
+                  <strong style="color:black">{{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}</strong>
+                {% endif %}
+                {% else %}
+                  <span style="color:#bbb">No messages yet</span>
+                {% endif %}
+              </div>
+            </div>
+          </a>
+
+        {% endfor %}
+      {% else %}
+        <div class="empty-chats">
+          <i class="bi bi-chat-dots"></i>
+          <p>No chats yet.<br>Search for someone to start.</p>
+        </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT MESSAGE AREA ── -->
+  <div class="chat-main {% if active_chat %}active{% endif %}">
+
+    {% if active_chat %}
+
+      <!-- Chat Header -->
+      {% if active_chat.user1.id == current_user.id %}
+        {% set other_user = active_chat.user2 %}
+      {% else %}
+        {% set other_user = active_chat.user1 %}
+      {% endif %}
+
+      <div class="chat-header">
+        <div class="chat-header-user">
+           <a href="{{ url_for('index') }}" class="btn-back">
+            <i class="bi bi-arrow-left"></i>
+           </a>
+          <div class="avatar avatar-md">{{ other_user.username[0].upper() }}</div>
+          <div>
+            <div class="chat-header-name">{{ other_user.username }}</div>
+            <div class="chat-header-status">
+              <span class="online-dot"></span> Online
+            </div>
+          </div>
+        </div>
+        <div class="chat-header-actions">
+          <button class="btn-icon-round" title="Info">
+            <i class="bi bi-info-circle"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-area" id="messages-area">
+        {% if active_chat.messages %}
+          {% for msg in active_chat.messages %}
+            <div class="message-wrap {% if msg.sender.id == current_user.id %}message-mine{% else %}message-theirs{% endif %}">
+              {% if msg.sender.id != current_user.id %}
+                <div class="avatar avatar-xs">{{ msg.sender.username[0].upper() }}</div>
+              {% endif %}
+              <div class="message-bubble-wrap">
+                <div class="message-bubble">
+                  <div class="message-text">{{ msg.content }}</div>
+                  <div class="message-time">{{ msg.timestamp.strftime('%H:%M') }}</div>
+                </div>
+                {% if msg.sender.id == current_user.id %}
+                <div class="msg-menu">
+                  <button class="msg-menu-btn" onclick="toggleMenu({{ msg.id }})">
+                    <i class="bi bi-three-dots-vertical"></i>
+                  </button>
+                  <div class="msg-dropdown" id="menu-{{ msg.id }}">
+                    <a href="#" onclick="editMsg({{ msg.id }}, '{{ msg.content }}', {{ active_chat.id }})">
+                      <i class="bi bi-pencil"></i> Edit
+                    </a>
+                    <a href="{{ url_for('delete', chat_id=active_chat.id, message_id=msg.id) }}">
+                      <i class="bi bi-trash"></i> Delete
+                    </a>
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-messages">
+            <i class="bi bi-chat-heart"></i>
+            <p>Say hello to {{ other_user.username }}! 👋</p>
+          </div>
+        {% endif %}
+      </div>
+
+    <!-- Edit Modal -->
+    <div class="edit-overlay" id="edit-overlay" onclick="closeEdit()"></div>
+    <div class="edit-modal" id="edit-modal">
+      <div class="edit-modal-header">
+        <span>Edit Message</span>
+        <button onclick="closeEdit()" class="edit-close"><i class="bi bi-x"></i></button>
+      </div>
+      <form method="post" id="edit-form">
+        <input type="hidden" name="msg_id" id="edit-msg-id"/>
+        {{ editMessageForm.hidden_tag() }}
+        <div class="edit-input-wrap">
+          {{ editMessageForm.message(id="edit-input", placeholder="Edit your message...") }}
+        </div>
+        {{ editMessageForm.submit(class="edit-submit-btn") }}
+      </form>
+    </div>
+
+      <!-- Message Input -->
+      <div class="message-input-area">
+        <form action="{{ url_for('index', chat_id=active_chat.id) }}" method="post" class="message-form">
+          {{ sendMessageForm.hidden_tag() }}
+          <div class="message-input-wrap">
+            {{ sendMessageForm.message(id="msg-input", placeholder="Type a message...", autocomplete="off") }}
+            <button type="submit" class="btn-send">
+              <i class="bi bi-send-fill"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+
+    {% else %}
+
+      <!-- No chat selected -->
+      <div class="no-chat-selected">
+        <i class="bi bi-chat-square-dots"></i>
+        <h3>Your Messages</h3>
+        <p>Select a chat or search for someone<br>to start a new conversation.</p>
+      </div>
+
+    {% endif %}
+
+  </div>
+
+</div>
+
+<script>
+  const area = document.getElementById('messages-area');
+  if (area) {
+      area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+  }
+  const chatItems = document.querySelectorAll('.chat-item');
+  const chatMain = document.querySelector('.chat-main');
+
+  chatItems.forEach(item => {
+      item.addEventListener('click', function() {
+          if (window.innerWidth <= 768) {
+              chatMain.classList.add('active');
+          }
+      });
+  });
+
+  document.querySelector('.message-form').addEventListener('submit', function() {
+  const btn = document.querySelector('.btn-send');
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+  btn.disabled = true;
+  });
+
+  document.getElementById('msg-input').focus();
+
+  function toggleMenu(id) {
+  document.querySelectorAll('.msg-dropdown').forEach(d => {
+    if (d.id !== `menu-${id}`) d.classList.remove('open');
+  });
+    document.getElementById(`menu-${id}`).classList.toggle('open');
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.msg-menu')) {
+      document.querySelectorAll('.msg-dropdown').forEach(d => d.classList.remove('open'));
+    }
+  });
+
+  function editMsg(id, content, chatId) {
+    document.getElementById('edit-msg-id').value = id;
+
+    document.getElementById('edit-form').action = `/edit_message?msg_id=${id}&chat_id={{ active_chat.id }}&content=${content}`;
+    document.getElementById('edit-input').value = content;
+    document.getElementById('edit-modal').classList.add('open');
+    document.getElementById('edit-overlay').classList.add('open');
+    document.getElementById('edit-input').focus();
+  }
+
+
+
+  function closeEdit() {
+    document.getElementById('edit-modal').classList.remove('open');
+    document.getElementById('edit-overlay').classList.remove('open');
+  }
+</script>
+
+{% endblock %}
