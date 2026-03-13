@@ -10,6 +10,8 @@ from flask_login import LoginManager, UserMixin, login_user, current_user, logou
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv, find_dotenv
+from flask_socketio import SocketIO, emit, join_room
+
 
 class Base(DeclarativeBase):
     pass
@@ -27,7 +29,9 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
+socketio = SocketIO(app)
 
+#db user model
 class User(UserMixin, db.Model):
     __tablename__ = "users"
 
@@ -39,6 +43,7 @@ class User(UserMixin, db.Model):
     chats_as_user2 = relationship("Chat", foreign_keys="[Chat.user2Id]", back_populates="user2")
     messages = relationship("Message", back_populates="sender")
 
+#db chat model
 class Chat(db.Model):
     __tablename__ = "chats"
 
@@ -50,7 +55,7 @@ class Chat(db.Model):
     user2 = relationship("User", foreign_keys=[user2Id], back_populates="chats_as_user2")
     messages = relationship("Message", back_populates="chat",  order_by="Message.timestamp", cascade="all, delete")
 
-
+#db message model
 class Message(db.Model):
     __tablename__ = "messages"
 
@@ -63,6 +68,7 @@ class Message(db.Model):
     chat = relationship("Chat", foreign_keys=[chatId], back_populates="messages")
     sender = relationship("User", foreign_keys=[senderId], back_populates="messages")
 
+#Falsk forms
 class LoginForm(FlaskForm):
     email = EmailField("Email", validators=[DataRequired()])
     password = PasswordField("Password", validators=[DataRequired()])
@@ -90,12 +96,13 @@ class ForgotPasswordForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=32)])
     repeat_password = PasswordField("Repeat Password", validators=[DataRequired(), EqualTo("password")])
     submit = SubmitField("Reset Password")
-
+#creating db if it is not created yet if it is created then it just passes
 try:
     with app.app_context():
         db.create_all()
 except Exception as e:
     pass
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -115,6 +122,7 @@ def index():
 
     all_chats.sort(key=lambda c: c.messages[-1].timestamp if c.messages else c.createdAt, reverse=True)
 
+    #chat open function
     if request.args.get("active_chat"):
         active_chat = db.session.execute(
             db.select(Chat).where(Chat.id == int(request.args.get("active_chat")))
@@ -130,25 +138,84 @@ def index():
         else:
             return redirect("/")
 
-    if sendMessageForm.validate_on_submit():
-        chat_id = request.args.get('chat_id')
-        try:
-            chat = db.session.execute(db.select(Chat).where(Chat.id == int(chat_id))).scalar()
-            new_message = Message(content=sendMessageForm.message.data, chat=chat, sender=current_user)
-            db.session.add(new_message)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            print(e)
-        else:
-            return redirect(url_for('index', active_chat=chat_id))
-
+    #search method
     if searchform.validate_on_submit():
         data = db.session.execute(db.select(User)).scalars().all()
         data = [user for user in data if ("").join(searchform.name.data.split(" ")).lower() in ("").join(str(user.username).split(" ")).lower() and current_user.username != user.username]
         return render_template("index.html", searchform=searchform, search_results=data, chats_as_user1=chats_as_user1, chats_as_user2=chats_as_user2, all_chats=all_chats,  active_chat=active_chat, sendMessageForm=sendMessageForm, editMessageForm=editMessageForm)
 
     return render_template("index.html", searchform=searchform, chats_as_user1=chats_as_user1, chats_as_user2=chats_as_user2, all_chats=all_chats, active_chat=active_chat, sendMessageForm=sendMessageForm, editMessageForm=editMessageForm)
+
+#sending message using socketio
+@socketio.on('send_message')
+def handle_message(data):
+    chat_id = data["chat_id"]
+    content = data["content"]
+    chat = db.session.execute(db.select(Chat).where(Chat.id == int(chat_id))).scalar()
+    new_message = Message(content=content, chat=chat, sender=current_user)
+    db.session.add(new_message)
+    db.session.commit()
+    messages_html = render_template('messagesPartial.html',
+                                    messages=chat.messages,
+                                    current_user=current_user,
+                                    chat_id=chat_id)
+    emit('refresh_messages', {'html': messages_html,
+                              'preview': content,
+                              'chat_id': chat_id,
+                              'sender_id': current_user.id,
+                              'time': new_message.timestamp.strftime('%H:%M')
+                              }, room=str(chat_id))
+
+#editing message using socketio
+@socketio.on("edit_message")
+def handle_edit(data):
+    chat_id = data["chat_id"]
+    message_id = data["msg_id"]
+    content = data["content"]
+
+    message_to_edit = db.session.execute(db.select(Message).where(Message.id == int(message_id))).scalar()
+    if message_to_edit and message_to_edit.senderId == current_user.id:
+        message_to_edit.content = content
+        db.session.commit()
+        messages_html = render_template('messagesPartial.html',
+                                        messages=message_to_edit.chat.messages,
+                                        current_user=current_user,
+                                        chat_id=chat_id)
+        emit('refresh_messages', {'html': messages_html,
+                                  'preview': content,
+                                  'chat_id': chat_id,
+                                  'sender_id': current_user.id,
+                                  'time': message_to_edit.timestamp.strftime('%H:%M')
+                                  }, room=str(chat_id))
+
+#deleting message using socketio
+@socketio.on('delete_message')
+def handle_delete(data):
+    chat_id = data["chat_id"]
+    message_id = data["msg_id"]
+    chat = db.session.execute(db.select(Chat).where(Chat.id == int(chat_id))).scalar()
+
+    if message_id:
+        message = db.session.execute(db.select(Message).where(Message.id == int(message_id))).scalar()
+        db.session.delete(message)
+        db.session.commit()
+        messages = db.session.execute(db.select(Message).where(Message.chatId == int(chat_id))).scalars().all()
+        messages_html = render_template('messagesPartial.html',
+                                        messages=chat.messages,
+                                        current_user=current_user,
+                                        chat_id=chat_id)
+        emit('refresh_messages', {'html': messages_html,
+                                  'preview': messages[-1].content,
+                                  'chat_id': chat_id,
+                                  'sender_id': messages[-1].senderId,
+                                  'time': message.timestamp.strftime('%H:%M')
+                                  }, room=str(chat_id))
+
+@socketio.on('join')
+def on_join(data):
+    join_room(str(data['chat_id']))
+
+#old method of deleting using flask not using anymore
 @app.route('/delete', methods=['GET', 'POST'])
 def delete():
     chat_id = request.args.get('chat_id')
@@ -162,6 +229,7 @@ def delete():
 
     return redirect(url_for('index', active_chat=chat_id))
 
+#old method of editing using flask not using anymore
 @app.route("/edit_message", methods=['GET', 'POST'])
 @login_required
 def edit_message():
@@ -179,6 +247,7 @@ def edit_message():
 
     return redirect(url_for('index', active_chat=chat_id))
 
+#creating chat function using flask
 @app.route('/add_new_chat', methods=['GET', 'POST'])
 @login_required
 def new_chat():
@@ -199,6 +268,7 @@ def new_chat():
 
     return redirect(url_for('index'))
 
+#login method
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
@@ -221,6 +291,7 @@ def login():
 
     return render_template('login.html', form=form, error=error)
 
+#forgot password method
 @app.route("/forgot_password", methods=["GET", "POST"])
 def forgot_password():
     form = ForgotPasswordForm()
@@ -242,7 +313,7 @@ def forgot_password():
 
     return render_template('forgotPassword.html', form=form, error=error)
 
-
+#register method
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     form = RegisterForm()
@@ -273,6 +344,7 @@ def register():
 
     return render_template('register.html', form=form, error=error)
 
+#logout function with route
 @app.route('/logout')
 @login_required
 def logout():
@@ -280,4 +352,4 @@ def logout():
     return redirect("/login")
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    socketio.run(app, debug=True)

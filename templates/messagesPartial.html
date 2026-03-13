@@ -1,0 +1,28 @@
+{% for msg in messages %}
+  <div class="message-wrap {% if msg.sender.id == current_user.id %}message-mine{% else %}message-theirs{% endif %}">
+    {% if msg.sender.id != current_user.id %}
+      <div class="avatar avatar-xs">{{ msg.sender.username[0].upper() }}</div>
+    {% endif %}
+    <div class="message-bubble-wrap">
+      <div class="message-bubble">
+        <div class="message-text">{{ msg.content }}</div>
+        <div class="message-time">{{ msg.timestamp.strftime('%H:%M') }}</div>
+      </div>
+      {% if msg.sender.id == current_user.id %}
+      <div class="msg-menu">
+        <button class="msg-menu-btn" onclick="toggleMenu({{ msg.id }})">
+          <i class="bi bi-three-dots-vertical"></i>
+        </button>
+        <div class="msg-dropdown" id="menu-{{ msg.id }}">
+          <a href="#" onclick="editMsg({{ msg.id }}, '{{ msg.content }}', {{ chat_id }})">
+            <i class="bi bi-pencil"></i> Edit
+          </a>
+            <a href="#" onclick="deleteMessage({{msg.id}},{{chat_id}})">
+                <i class="bi bi-trash"></i> Delete
+            </a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+{% endfor %}

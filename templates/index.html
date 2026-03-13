@@ -76,9 +76,9 @@
               <div class="chat-item-preview">
                 {% if chat.messages %}
                 {% if not msgs %}
-                  {{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}
+                  {%if chat.messages[-1].sender.id|int == current_user.id|int %} You sent a message {% else %} {{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}{% endif %}
                 {% else %}
-                  <strong style="color:black">{{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}</strong>
+                  <strong style="color:black">{%if chat.messages[-1].sender.id|int == current_user.id|int %} You sent a message {% else %} {{ chat.messages[-1].content[:40] }}{% if chat.messages[-1].content|length > 40 %}...{% endif %}{% endif %}</strong>
                 {% endif %}
                 {% else %}
                   <span style="color:#bbb">No messages yet</span>
@@ -152,8 +152,8 @@
                     <a href="#" onclick="editMsg({{ msg.id }}, '{{ msg.content }}', {{ active_chat.id }})">
                       <i class="bi bi-pencil"></i> Edit
                     </a>
-                    <a href="{{ url_for('delete', chat_id=active_chat.id, message_id=msg.id) }}">
-                      <i class="bi bi-trash"></i> Delete
+                    <a onclick="deleteMessage({{msg.id}},{{active_chat.id}})">
+                         <i class="bi bi-trash"></i> Delete
                     </a>
                   </div>
                 </div>
@@ -176,19 +176,17 @@
         <span>Edit Message</span>
         <button onclick="closeEdit()" class="edit-close"><i class="bi bi-x"></i></button>
       </div>
-      <form method="post" id="edit-form">
         <input type="hidden" name="msg_id" id="edit-msg-id"/>
         {{ editMessageForm.hidden_tag() }}
         <div class="edit-input-wrap">
           {{ editMessageForm.message(id="edit-input", placeholder="Edit your message...") }}
         </div>
-        {{ editMessageForm.submit(class="edit-submit-btn") }}
-      </form>
+        {{ editMessageForm.submit(class="edit-submit-btn",onclick="edit()") }}
     </div>
 
       <!-- Message Input -->
       <div class="message-input-area">
-        <form action="{{ url_for('index', chat_id=active_chat.id) }}" method="post" class="message-form">
+        <form  method="post" class="message-form">
           {{ sendMessageForm.hidden_tag() }}
           <div class="message-input-wrap">
             {{ sendMessageForm.message(id="msg-input", placeholder="Type a message...", autocomplete="off") }}
@@ -215,6 +213,21 @@
 </div>
 
 <script>
+
+
+  const socket = io();
+    socket.on('connect', function() {
+    console.log('connected:', socket.id);
+});
+
+socket.on('disconnect', function() {
+    console.log('disconnected');
+});
+
+  {% if active_chat %}
+  socket.emit('join', { chat_id: {{ active_chat.id }} });
+  {% endif %}
+
   const area = document.getElementById('messages-area');
   if (area) {
       area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
@@ -230,11 +243,6 @@
       });
   });
 
-  document.querySelector('.message-form').addEventListener('submit', function() {
-  const btn = document.querySelector('.btn-send');
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
-  btn.disabled = true;
-  });
 
   document.getElementById('msg-input').focus();
 
@@ -253,8 +261,6 @@
 
   function editMsg(id, content, chatId) {
     document.getElementById('edit-msg-id').value = id;
-
-    document.getElementById('edit-form').action = `/edit_message?msg_id=${id}&chat_id={{ active_chat.id }}&content=${content}`;
     document.getElementById('edit-input').value = content;
     document.getElementById('edit-modal').classList.add('open');
     document.getElementById('edit-overlay').classList.add('open');
@@ -267,6 +273,95 @@
     document.getElementById('edit-modal').classList.remove('open');
     document.getElementById('edit-overlay').classList.remove('open');
   }
+
+  const msgForm = document.querySelector('.message-form');
+    if (msgForm) {
+      msgForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          const input = document.getElementById('msg-input');
+          if (input.value.trim()) {
+              socket.emit('send_message', {
+                  chat_id: {{ active_chat.id }},
+                  content: input.value
+              });
+              input.value = '';
+              input.focus();
+          }
+    });
+  }
+
+  function edit() {
+    const msgId = document.getElementById('edit-msg-id').value;
+    const content = document.getElementById('edit-input').value;
+    const chatId = {{ active_chat.id }};
+
+    if (msgId && content.trim()) {
+        socket.emit('edit_message', {
+            msg_id: msgId,
+            content: content,
+            chat_id: chatId
+        });
+    }
+
+    document.getElementById('edit-modal').classList.remove('open');
+    document.getElementById('edit-overlay').classList.remove('open');
+  }
+
+  function deleteMessage(messageId, chatId){
+        if(messageId && chatId){
+          socket.emit('delete_message', {
+            msg_id: messageId,
+            chat_id: chatId
+          });
+        }
+  }
+
+  socket.on('new_message', function(data) {
+      const area = document.getElementById('messages-area');
+      const isMine = data.sender_id === {{ current_user.id }};
+      area.innerHTML += `
+          <div class="message-wrap ${isMine ? 'message-mine' : 'message-theirs'}">
+              <div class="message-bubble-wrap">
+                  <div class="message-bubble">
+                      <div class="message-text">${data.content}</div>
+                      <div class="message-time">${data.time}</div>
+                  </div>
+              </div>
+          </div>`;
+      area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+      document.getElementsByClassName('chat-item-preview')[0].innerHTML = "You sent a message";
+  });
+
+  socket.on('message_edited', function(data) {
+    const msgMenu = document.getElementById(`menu-${data.msg_id}`);
+    if (msgMenu) {
+        const bubble = msgMenu.closest('.message-bubble-wrap');
+        if (bubble) {
+            const msgText = bubble.querySelector('.message-text');
+            if (msgText) msgText.innerHTML = data.content;
+        }
+    }
+  });
+
+  socket.on('refresh_messages', function(data) {
+    document.getElementById('messages-area').innerHTML = data.html;
+    const area = document.getElementById('messages-area');
+    area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+
+    const chatItems = document.querySelectorAll('.chat-item');
+    chatItems.forEach(function(item) {
+        if (item.href.includes('active_chat=' + data.chat_id)) {
+            const preview = item.querySelector('.chat-item-preview');
+            const time = item.querySelector('.chat-item-time');
+            if (preview) {
+                preview.innerHTML = data.sender_id === {{ current_user.id }}
+                    ? 'You sent a message'
+                    : data.preview.substring(0, 40);
+            }
+            if (time) time.textContent = data.time;
+        }
+    });
+  });
 </script>
 
 {% endblock %}
