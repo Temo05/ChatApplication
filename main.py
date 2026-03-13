@@ -91,6 +91,12 @@ class ForgotPasswordForm(FlaskForm):
     repeat_password = PasswordField("Repeat Password", validators=[DataRequired(), EqualTo("password")])
     submit = SubmitField("Reset Password")
 
+try:
+    with app.app_context():
+        db.create_all()
+except Exception as e:
+    pass
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
