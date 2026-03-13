@@ -17,7 +17,10 @@ class Base(DeclarativeBase):
 load_dotenv(find_dotenv())
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DB_URI", "sqlite:///chat-db.sqlite")
+uri = os.environ.get("DB_URI", "sqlite:///chat-db.sqlite")
+if uri.startswith("postgres://"):
+    uri = uri.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = uri
 app.secret_key = os.getenv("SECRET_KEY")
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
@@ -87,12 +90,6 @@ class ForgotPasswordForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=32)])
     repeat_password = PasswordField("Repeat Password", validators=[DataRequired(), EqualTo("password")])
     submit = SubmitField("Reset Password")
-
-try:
-    with app.app_context():
-        db.create_all()
-except Exception as e:
-    pass
 
 @login_manager.user_loader
 def load_user(user_id):
