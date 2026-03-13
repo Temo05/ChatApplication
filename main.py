@@ -29,7 +29,7 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 #db user model
 class User(UserMixin, db.Model):
@@ -352,4 +352,4 @@ def logout():
     return redirect("/login")
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=False)
